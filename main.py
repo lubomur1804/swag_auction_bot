@@ -1,11 +1,30 @@
+import os
+import asyncio
 import logging
+from aiohttp import web
 import google.generativeai as genai
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 
+# --- НАЛАШТУВАННЯ ЛОГІВ ---
 logging.basicConfig(level=logging.INFO)
+
+# --- БЛОК ДЛЯ RENDER (ФІКС ПОМИЛКИ ПОРТІВ) ---
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+async def start_webhook():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    # Render автоматично надає порт через змінну оточення PORT
+    port = int(os.environ.get("PORT", 10000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logging.info(f"Web server started on port {port}")
 
 # === КОНФІГУРАЦІЯ ===
 API_TOKEN = '8294128537:AAE8G3c23bhBqsqHTKjBcd7Oq-e6NhdjrVM' 
@@ -25,7 +44,7 @@ CHANNELS = {
 CH_NAMES = {
     "MERCH": "MERCH 👕", "LUXURY": "LUXURY 💍", "VINTAGE": "VINTAGE 🏛️",
     "DENIM": "DENIM 👖", "ACCESSORIES": "ACCESSORIES 👜", "OUTDOOR": "OUTDOOR 🏔️",
-    "JERSEY": "JERSEY ⚽", "SNEAKERS": "SNEAKERS AUCTION 👟" # Змінено тут
+    "JERSEY": "JERSEY ⚽", "SNEAKERS": "SNEAKERS AUCTION 👟"
 }
 
 URL_RULES = "https://t.me/swagplabyla"
@@ -50,7 +69,7 @@ class Form(StatesGroup):
     payment = State()
     photos = State()
 
-# === ЛОГІКА ===
+# === ЛОГІКА БОТА ===
 
 @dp.message_handler(commands=['start'], state="*")
 async def start(message: types.Message, state: FSMContext):
@@ -104,7 +123,7 @@ async def p_money(message: types.Message, state: FSMContext):
         await message.answer("Крок:")
     else:
         await Form.delivery.set()
-        await message.answer("Відправляю:") # Змінено тут
+        await message.answer("Відправляю:")
 
 @dp.message_handler(state=Form.step)
 async def p_step(message: types.Message, state: FSMContext):
@@ -116,7 +135,7 @@ async def p_step(message: types.Message, state: FSMContext):
 async def p_buyout(message: types.Message, state: FSMContext):
     await state.update_data(buyout=message.text)
     await Form.delivery.set()
-    await message.answer("Відправляю:") # Змінено тут
+    await message.answer("Відправляю:")
 
 @dp.message_handler(state=Form.delivery)
 async def p_deliv(message: types.Message, state: FSMContext):
@@ -203,12 +222,16 @@ async def process_all(message: types.Message, state: FSMContext):
     
     try:
         await bot.send_media_group(target, media)
-        # Змінено тут: "Опубліковано" замість "Автоматично опубліковано"
         await message.answer(f"🚀 Опубліковано в канал <b>{CH_NAMES[final_cat]}</b>!", parse_mode="HTML")
     except Exception as e:
         await message.answer(f"❌ Помилка: {e}")
     
     await state.finish()
 
+# --- ЗАПУСК ---
 if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    # Запускаємо веб-сервер паралельно з ботом
+    loop.create_task(start_webhook())
+    logging.info("Starting bot polling...")
     executor.start_polling(dp, skip_updates=True)
