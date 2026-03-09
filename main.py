@@ -1,7 +1,6 @@
 import os
 import asyncio
 import logging
-import google.generativeai as genai
 from aiohttp import web
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -12,161 +11,131 @@ from aiogram.contrib.fsm_storage.memory import MemoryStorage
 # --- НАЛАШТУВАННЯ ---
 API_TOKEN = '8294128537:AAE8G3c23bhBqsqHTKjBcd7Oq-e6NhdjrVM'
 ADMIN_ID = 5055318931
-GEMINI_KEY = 'ВСТАВ_СВІЙ_КЛЮЧ'
-
-# Посилання на твоє фото для Містері Боксу
-MYSTERY_BOX_PHOTO = "https://i.ibb.co/6R0yX0P/mystery-box.jpg" 
-
-CHANNELS = {
-    "VINTAGE": -1002283307774,
-    "LUXURY": -1002283307774,
-    "DENIM": -1002283307774,
-    "OUTDOOR": -1002283307774,
-    "MERCH": -1002283307774,
-    "ACCESSORIES": -1002283307774
-}
+MYSTERY_BOX_URL = "https://i.ibb.co/6R0yX0P/mystery-box.jpg" # Твоє фото боксу
 
 logging.basicConfig(level=logging.INFO)
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
-
 bot = Bot(token=API_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
-# --- СТАНИ ---
-class PackOrder(StatesGroup):
-    title = State(); size = State(); condition = State(); start_price = State(); step = State(); buyout = State(); shipping = State(); payment = State(); photo = State()
+class OrderState(StatesGroup):
+    mode = State() # LOT, BUY, BOX, PACK
+    title = State(); size = State(); condition = State()
+    price_info = State() # Старт/Бюджет
+    step = State(); buyout = State()
+    delivery = State(); payment = State(); photo = State()
 
-class MysteryBox(StatesGroup):
-    box_type = State(); size = State(); condition = State(); start_price = State(); step = State(); buyout = State(); shipping = State(); payment = State()
-
-# --- МЕНЮ ---
-def main_menu():
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(
-        InlineKeyboardButton("Виставити лот 📦", callback_data="start_listing"),
-        InlineKeyboardButton("Пак речей 🧺", callback_data="start_pack"),
-        InlineKeyboardButton("Містері Бокс 🎁", callback_data="start_mystery")
+# --- КНОПКИ ПІД ПОСТОМ ---
+def post_keyboard():
+    kb = InlineKeyboardMarkup(row_width=3)
+    kb.add(
+        InlineKeyboardButton("ВИСТАВИТИ ЛОТ", url="https://t.me/swag_auction_bot"),
+        InlineKeyboardButton("ПРАВИЛА", url="https://t.me/swagplabyla"),
+        InlineKeyboardButton("ГАРАНТ", url="https://t.me/swagking61")
     )
-    return keyboard
+    return kb
 
-def box_types_keyboard():
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    for x in ["LUXURY", "DENIM", "VINTAGE", "OUTDOOR"]:
-        keyboard.insert(InlineKeyboardButton(x, callback_data=f"box_{x}"))
-    return keyboard
+def main_menu():
+    kb = InlineKeyboardMarkup(row_width=1)
+    kb.add(
+        InlineKeyboardButton("Виставити лот 📦", callback_data="set_LOT"),
+        InlineKeyboardButton("Купити 💸", callback_data="set_BUY"),
+        InlineKeyboardButton("Містері Бокс 🎁", callback_data="set_BOX"),
+        InlineKeyboardButton("Пак речей 🧺", callback_data="set_PACK")
+    )
+    return kb
 
 @dp.message_handler(commands=['start'], state="*")
-async def cmd_start(message: types.Message, state: FSMContext):
+async def cmd_start(m: types.Message, state: FSMContext):
     await state.finish()
-    await message.answer("Вибери дію, бро:", reply_markup=main_menu())
+    await m.answer("Ласкаво просимо на аукціони! 🔥\nВибери дію:", reply_markup=main_menu())
 
-# --- 🧺 ЛОГІКА ПАК РЕЧЕЙ (З ФОТО) ---
-@dp.callback_query_handler(lambda c: c.data == 'start_pack')
-async def pack_start(c: types.CallbackQuery):
-    await PackOrder.title.set(); await bot.send_message(c.from_user.id, "🧺 Назва паку:")
-
-@dp.message_handler(state=PackOrder.title)
-async def pack_1(m: types.Message, state: FSMContext):
-    await state.update_data(title=m.text); await PackOrder.next(); await m.answer("📏 Розмір:")
-
-@dp.message_handler(state=PackOrder.size)
-async def pack_2(m: types.Message, state: FSMContext):
-    await state.update_data(size=m.text); await PackOrder.next(); await m.answer("✨ Стан:")
-
-@dp.message_handler(state=PackOrder.condition)
-async def pack_3(m: types.Message, state: FSMContext):
-    await state.update_data(condition=m.text); await PackOrder.next(); await m.answer("🏁 Старт:")
-
-@dp.message_handler(state=PackOrder.start_price)
-async def pack_4(m: types.Message, state: FSMContext):
-    await state.update_data(start_price=m.text); await PackOrder.next(); await m.answer("📈 Крок:")
-
-@dp.message_handler(state=PackOrder.step)
-async def pack_5(m: types.Message, state: FSMContext):
-    await state.update_data(step=m.text); await PackOrder.next(); await m.answer("💰 Викуп:")
-
-@dp.message_handler(state=PackOrder.buyout)
-async def pack_6(m: types.Message, state: FSMContext):
-    await state.update_data(buyout=m.text); await PackOrder.next(); await m.answer("🚚 Відправка:")
-
-@dp.message_handler(state=PackOrder.shipping)
-async def pack_7(m: types.Message, state: FSMContext):
-    await state.update_data(shipping=m.text); await PackOrder.next(); await m.answer("💳 Оплата:")
-
-@dp.message_handler(state=PackOrder.payment)
-async def pack_8(m: types.Message, state: FSMContext):
-    await state.update_data(payment=m.text); await PackOrder.next(); await m.answer("📸 Фото паку:")
-
-@dp.message_handler(content_types=['photo'], state=PackOrder.photo)
-async def pack_final(m: types.Message, state: FSMContext):
-    d = await state.get_data()
-    cap = (f"🧺 **ПАК РЕЧЕЙ**\n\nНазва: {d['title']}\n\nРозмір: {d['size']}\nСтан: {d['condition']}\n\n"
-           f"Старт: {d['start_price']}\nКрок: {d['step']}\nВикуп: {d['buyout']}\n\n"
-           f"Відправляю: {d['shipping']}\nОплата: {d['payment']}\n\nПродавець: @{m.from_user.username}")
-    await bot.send_photo(ADMIN_ID, m.photo[-1].file_id, caption=cap, parse_mode="Markdown")
-    await m.answer("Пак надіслано! ✅"); await state.finish()
-
-# --- 🎁 ЛОГІКА МІСТЕРІ БОКС (БЕЗ ЗАПИТУ ФОТО) ---
-@dp.callback_query_handler(lambda c: c.data == 'start_mystery')
-async def myst_start(c: types.CallbackQuery):
-    await MysteryBox.box_type.set(); await bot.send_message(c.from_user.id, "📦 Оберіть категорію боксу:", reply_markup=box_types_keyboard())
-
-@dp.callback_query_handler(lambda c: c.data.startswith('box_'), state=MysteryBox.box_type)
-async def myst_1(c: types.CallbackQuery, state: FSMContext):
-    await state.update_data(box_type=f"{c.data.split('_')[1]} MYSTERY BOX")
-    await MysteryBox.next(); await bot.send_message(c.from_user.id, "📏 Розмір речей в боксі:")
-
-@dp.message_handler(state=MysteryBox.size)
-async def myst_2(m: types.Message, state: FSMContext):
-    await state.update_data(size=m.text); await MysteryBox.next(); await m.answer("✨ Стан речей:")
-
-@dp.message_handler(state=MysteryBox.condition)
-async def myst_3(m: types.Message, state: FSMContext):
-    await state.update_data(condition=m.text); await MysteryBox.next(); await m.answer("🏁 Старт:")
-
-@dp.message_handler(state=MysteryBox.start_price)
-async def myst_4(m: types.Message, state: FSMContext):
-    await state.update_data(start_price=m.text); await MysteryBox.next(); await m.answer("📈 Крок:")
-
-@dp.message_handler(state=MysteryBox.step)
-async def myst_5(m: types.Message, state: FSMContext):
-    await state.update_data(step=m.text); await MysteryBox.next(); await m.answer("💰 Викуп:")
-
-@dp.message_handler(state=MysteryBox.buyout)
-async def myst_6(m: types.Message, state: FSMContext):
-    await state.update_data(buyout=m.text); await MysteryBox.next(); await m.answer("🚚 Відправка:")
-
-@dp.message_handler(state=MysteryBox.shipping)
-async def myst_7(m: types.Message, state: FSMContext):
-    await state.update_data(shipping=m.text); await MysteryBox.next(); await m.answer("💳 Оплата:")
-
-@dp.message_handler(state=MysteryBox.payment)
-async def myst_final(m: types.Message, state: FSMContext):
-    d = await state.get_data()
-    cap = (f"❓ **{d['box_type']}** 📦\n\nРозмір: {d['size']}\nСтан: {d['condition']}\n\n"
-           f"Старт: {d['start_price']}\nКрок: {d['step']}\nВикуп: {d['buyout']}\n\n"
-           f"Відправляю: {d['shipping']}\nОплата: {m.text}\n\nПродавець: @{m.from_user.username}\n"
-           f"Приклад: https://pin.it/13eHcuMsj")
+@dp.callback_query_handler(lambda c: c.data.startswith('set_'), state="*")
+async def start_flow(c: types.CallbackQuery, state: FSMContext):
+    mode = c.data.split('_')[1]
+    await state.update_data(mode=mode)
+    await OrderState.title.set()
     
-    chan = CHANNELS.get(d['box_type'].split()[0], ADMIN_ID)
-    # ТУТ МАГІЯ: Бот сам шле твоє фото по лінку
-    await bot.send_photo(chan, MYSTERY_BOX_PHOTO, caption=cap, parse_mode="Markdown")
-    await m.answer(f"Бокс успішно виставлено! ✅"); await state.finish()
+    prompts = {
+        "LOT": "Назва речі:", "BUY": "Що хочете купити?:", 
+        "BOX": "Назва боксу:", "PACK": "Назва паку речей:"
+    }
+    await bot.send_message(c.from_user.id, prompts[mode])
 
-# --- СТАНДАРТНИЙ ЛОТ ---
-@dp.message_handler(content_types=['photo'])
-async def handle_std_lot(m: types.Message):
-    if not m.caption: return await m.answer("Додай опис!")
-    prompt = f"Визнач категорію одним словом: {m.caption}."
-    try: resp = model.generate_content(prompt).text.strip().upper()
-    except: resp = "VINTAGE"
-    await bot.send_photo(CHANNELS.get(resp, ADMIN_ID), m.photo[-1].file_id, caption=m.caption)
-    await m.answer(f"Опубліковано в {resp}! ✅")
+@dp.message_handler(state=OrderState.title)
+async def st_title(m: types.Message, state: FSMContext):
+    await state.update_data(title=m.text); await OrderState.size.set(); await m.answer("Розмір:")
 
-# ВЕБ-СЕРВЕР
-async def handle(request): return web.Response(text="Bot is running!")
+@dp.message_handler(state=OrderState.size)
+async def st_size(m: types.Message, state: FSMContext):
+    await state.update_data(size=m.text); await OrderState.condition.set(); await m.answer("Стан:")
+
+@dp.message_handler(state=OrderState.condition)
+async def st_cond(m: types.Message, state: FSMContext):
+    await state.update_data(condition=m.text); await OrderState.price_info.set()
+    d = await state.get_data()
+    txt = "Бюджет:" if d['mode'] == "BUY" else "Старт:"
+    await m.answer(txt)
+
+@dp.message_handler(state=OrderState.price_info)
+async def st_price(m: types.Message, state: FSMContext):
+    await state.update_data(price=m.text)
+    d = await state.get_data()
+    if d['mode'] == "BUY":
+        await OrderState.delivery.set(); await m.answer("Відправлення (напр. Нова пошта / Укр пошта):")
+    else:
+        await OrderState.step.set(); await m.answer("Крок:")
+
+@dp.message_handler(state=OrderState.step)
+async def st_step(m: types.Message, state: FSMContext):
+    await state.update_data(step=m.text); await OrderState.buyout.set(); await m.answer("Викуп:")
+
+@dp.message_handler(state=OrderState.buyout)
+async def st_buyout(m: types.Message, state: FSMContext):
+    await state.update_data(buyout=m.text); await OrderState.delivery.set(); await m.answer("Відправляю:")
+
+@dp.message_handler(state=OrderState.delivery)
+async def st_delivery(m: types.Message, state: FSMContext):
+    await state.update_data(delivery=m.text); await OrderState.payment.set()
+    txt = "Оплачую (напр. Повна оплата, наложка):" if (await state.get_data())['mode'] == "BUY" else "Оплата:"
+    await m.answer(txt)
+
+@dp.message_handler(state=OrderState.payment)
+async def st_payment(m: types.Message, state: FSMContext):
+    await state.update_data(payment=m.text)
+    d = await state.get_data()
+    if d['mode'] == "BOX" or d['mode'] == "BUY": # БОКС ТА КУПІВЛЯ БЕЗ ФОТО
+        await finish_order(m, state)
+    else:
+        await OrderState.photo.set(); await m.answer("📸 Надішліть фото:")
+
+@dp.message_handler(content_types=['photo'], state=OrderState.photo)
+async def st_photo(m: types.Message, state: FSMContext):
+    await state.update_data(photo_id=m.photo[-1].file_id)
+    await finish_order(m, state)
+
+async def finish_order(m: types.Message, state: FSMContext):
+    d = await state.get_data()
+    user = f"@{m.from_user.username}" if m.from_user.username else "Не вказано"
+    
+    if d['mode'] == "BUY":
+        cap = (f"Куплю: {d['title']}\n\nРозмір: {d['size']}\nСтан: {d['condition']}\n\n"
+               f"Бюджет: {d['price']}\n\nВідправлення: {d['delivery']}\n\n"
+               f"Оплачую: {d['payment']}\n\nПокупець - {user}")
+        await bot.send_message(ADMIN_ID, cap, reply_markup=post_keyboard())
+    else:
+        title_prefix = "Назва:" if d['mode'] == "LOT" else "Назва:"
+        cap = (f"{title_prefix} {d['title']}\n\nРозмір: {d['size']}\nСтан: {d['condition']}\n\n"
+               f"Старт: {d['price']}\nКрок: {d['step']}\n\nВикуп: {d['buyout']}\n\n"
+               f"Відправляю: {d['delivery']}\nОплата: {d['payment']}\n\n"
+               f"Продавець - {user}\nКінець через 24 години після останньої ставки.")
+        photo = d.get('photo_id', MYSTERY_BOX_URL)
+        await bot.send_photo(ADMIN_ID, photo, caption=cap, reply_markup=post_keyboard())
+
+    await m.answer("Готово! Надіслано на модерацію. ✅"); await state.finish()
+
+# --- СЕРВЕР ---
+async def handle(request): return web.Response(text="Running")
 async def start_webhook():
     app = web.Application(); app.router.add_get("/", handle)
     runner = web.AppRunner(app); await runner.setup()
